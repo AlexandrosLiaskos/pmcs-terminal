@@ -2,12 +2,13 @@
 
 **Enterprise Project Management Command-Line System**
 
-A headless, file-based project management system designed for terminal-driven workflows with git-based collaboration and corporate hierarchy integration.
+A headless, file-based project management system designed for terminal-driven workflows with git-based collaboration, corporate hierarchy integration, and automatic military-grade encryption.
 
 ## 🚀 Features
 
 - **Headless Terminal Interface** - Complete CLI-based project management
-- **File-Based Storage** - No database required, all data stored in JSON files
+- **Automatic Encryption** - All data automatically encrypted with AES-256-GCM by default
+- **File-Based Storage** - No database required, all data stored in encrypted JSON files
 - **Git Integration** - Version control for all operations with atomic transactions
 - **Corporate Hierarchy** - Built-in support for enterprise organizational structures
 - **Role-Based Access Control** - Comprehensive permission system
@@ -45,10 +46,13 @@ sudo npm link
 cd ~/my-projects
 pmcs init
 
-# Login with default credentials
-pmcs auth login -e admin@pmcs.local -p admin123
+# Register first user (becomes system owner)
+pmcs auth register -n "System Owner" -e "admin@company.com" -p "securepass123"
 
-# Create your first organization
+# Login
+pmcs auth login -e "admin@company.com" -p "securepass123"
+
+# Create your first organization (automatically encrypted)
 pmcs organization create -n "My Organization"
 ```
 
@@ -58,8 +62,11 @@ pmcs organization create -n "My Organization"
 # Run in development mode
 npm run dev -- <command>
 
+# Example: Register first user in development
+npm run dev -- auth register -n "Dev User" -e "dev@company.com" -p "devpass123"
+
 # Example: Login in development
-npm run dev -- auth login -e admin@pmcs.local -p admin123
+npm run dev -- auth login -e "dev@company.com" -p "devpass123"
 ```
 
 ## 🏗️ Architecture
@@ -78,7 +85,8 @@ terminal/
 │   ├── services/              # Core services
 │   │   ├── AuthenticationService.ts
 │   │   ├── GitService.ts
-│   │   ├── FileBasedRepository.ts
+│   │   ├── CryptoService.ts    # Automatic encryption service
+│   │   ├── EncryptedFileRepository.ts
 │   │   └── RepositoryFactory.ts
 │   ├── types/                 # Type definitions
 │   │   └── index.ts
@@ -91,18 +99,23 @@ terminal/
 
 ### Data Storage
 
-All data is stored in a hierarchical file structure:
+All data is automatically encrypted and stored in a hierarchical file structure:
 
 ```
 organizations/
 ├── <org-id>/
-│   ├── organization.json      # Organization metadata
-│   ├── portfolios/            # Portfolio entities
-│   ├── programs/              # Program entities
-│   ├── projects/              # Project entities
-│   ├── assignments/           # Task assignments
-│   ├── announcements/         # Communications
-│   └── README.md              # Organization documentation
+│   ├── organization.json.encrypted    # Encrypted organization metadata
+│   ├── portfolios/                    # Encrypted portfolio entities
+│   ├── programs/                      # Encrypted program entities
+│   ├── projects/                      # Encrypted project entities
+│   ├── assignments/                   # Encrypted task assignments
+│   ├── announcements/                 # Encrypted communications
+│   └── README.md                      # Plain text documentation
+.pmcs/
+├── encryption/                        # Encryption keys and metadata
+│   ├── master.key                     # Master encryption key
+│   └── access.log                     # Decryption access logs
+└── config.json                        # System configuration
 ```
 
 ## 🎯 Quick Commands
@@ -152,7 +165,22 @@ pmcs members update-role -o <org-id> -u user@email.com -l DIRECTOR
 pmcs members remove -o <org-id> -u user@email.com
 ```
 
-## 🔐 Security & Permissions
+## 🔐 Security & Encryption
+
+### Automatic Encryption
+All data is automatically encrypted using **AES-256-GCM** encryption:
+- **Transparent Operation** - No encryption commands needed, all files encrypted by default
+- **Hierarchical Keys** - Master key derives organization and user-specific keys
+- **Classification-Based** - Encryption strength varies by security classification
+- **Audit Trail** - All decryption operations logged for security compliance
+
+### Key Management
+- **Master Key** - Generated automatically during `pmcs init`
+- **Derived Keys** - User/organization specific keys derived from master key
+- **Session Keys** - Temporary keys for active user sessions
+- **Key Rotation** - Automatic key rotation based on security policies
+
+## 🔐 Permissions & Access Control
 
 ### Corporate Hierarchy Levels
 - **CEO** - Chief Executive Officer
@@ -292,8 +320,11 @@ pmcs assignments list --assigned-to-me
 # Check credentials
 pmcs auth status
 
-# Use default admin credentials
-pmcs auth login -e admin@pmcs.local -p admin123
+# Register first user if system is empty
+pmcs auth register -n "System Owner" -e "admin@company.com" -p "securepass123"
+
+# Login with your credentials
+pmcs auth login -e "admin@company.com" -p "securepass123"
 ```
 
 **Git Repository Issues**
