@@ -20,8 +20,6 @@ export class RepositoryFactory {
   private gitService: GitService;
   private authService?: AuthenticationService;
   private repositories: Map<string, Repository<any>> = new Map();
-  private encryptedRepositories: Map<string, Repository<any>> = new Map();
-  private useEncryption: boolean = false;
 
   constructor(gitService: GitService, authService?: AuthenticationService) {
     this.gitService = gitService;
@@ -30,14 +28,6 @@ export class RepositoryFactory {
 
   setAuthenticationService(authService: AuthenticationService): void {
     this.authService = authService;
-  }
-
-  enableEncryption(): void {
-    this.useEncryption = true;
-  }
-
-  disableEncryption(): void {
-    this.useEncryption = false;
   }
 
   async initializeDirectoryStructure(): Promise<void> {
@@ -128,35 +118,35 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
 
   getOrganizationRepository(): Repository<Organization> {
     const key = 'organization';
-    const repoMap = this.useEncryption ? this.encryptedRepositories : this.repositories;
     
-    if (!repoMap.has(key)) {
-      if (this.useEncryption && this.authService) {
-        repoMap.set(key, new EncryptedFileRepository<Organization>(
+    if (!this.repositories.has(key)) {
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Organization>(
           'organization',
           this.gitService,
           this.authService,
           { autoEncrypt: true }
         ));
       } else {
-        repoMap.set(key, new FileBasedRepository<Organization>(
-          'organizations',
-          this.gitService,
-          'organization'
-        ));
+        throw new Error('Authentication service required for encrypted repositories');
       }
     }
-    return repoMap.get(key)!;
+    return this.repositories.get(key)!;
   }
 
   getPortfolioRepository(): Repository<Portfolio> {
     const key = 'portfolio';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Portfolio>(
-        'portfolios',
-        this.gitService,
-        'portfolio'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Portfolio>(
+          'portfolio',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }
@@ -164,11 +154,16 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
   getProgramRepository(): Repository<Program> {
     const key = 'program';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Program>(
-        'programs',
-        this.gitService,
-        'program'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Program>(
+          'program',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }
@@ -176,11 +171,16 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
   getProjectRepository(): Repository<Project> {
     const key = 'project';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Project>(
-        'projects',
-        this.gitService,
-        'project'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Project>(
+          'project',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }
@@ -188,11 +188,16 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
   getObjectiveRepository(): Repository<Objective> {
     const key = 'objective';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Objective>(
-        'objectives',
-        this.gitService,
-        'objective'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Objective>(
+          'objective',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }
@@ -200,11 +205,16 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
   getKeyResultRepository(): Repository<KeyResult> {
     const key = 'keyresult';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<KeyResult>(
-        'keyresults',
-        this.gitService,
-        'keyresult'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<KeyResult>(
+          'keyresult',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }
@@ -212,11 +222,16 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
   getInitiativeRepository(): Repository<Initiative> {
     const key = 'initiative';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Initiative>(
-        'initiatives',
-        this.gitService,
-        'initiative'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Initiative>(
+          'initiative',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }
@@ -224,11 +239,16 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
   getAssignmentRepository(): Repository<Assignment> {
     const key = 'assignment';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Assignment>(
-        'assignments',
-        this.gitService,
-        'assignment'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Assignment>(
+          'assignment',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }
@@ -236,11 +256,16 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
   getAnnouncementRepository(): Repository<Announcement> {
     const key = 'announcement';
     if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Announcement>(
-        'announcements',
-        this.gitService,
-        'announcement'
-      ));
+      if (this.authService) {
+        this.repositories.set(key, new EncryptedFileRepository<Announcement>(
+          'announcement',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        throw new Error('Authentication service required for encrypted repositories');
+      }
     }
     return this.repositories.get(key)!;
   }

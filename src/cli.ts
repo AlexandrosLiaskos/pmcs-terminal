@@ -10,7 +10,6 @@ import { AssignmentCommands } from './commands/AssignmentCommands';
 import { AnnouncementCommands } from './commands/AnnouncementCommands';
 import { AuthCommands } from './commands/AuthCommands';
 import { MembershipCommands } from './commands/MembershipCommands';
-import { EncryptionCommands } from './commands/EncryptionCommands';
 import { HelpSystem } from './utils/HelpSystem';
 import * as dotenv from 'dotenv';
 
@@ -28,7 +27,7 @@ class PMCSApplication {
     this.program = new Command();
     this.authService = new AuthenticationService();
     this.gitService = new GitService();
-    this.repositoryFactory = new RepositoryFactory(this.gitService);
+    this.repositoryFactory = new RepositoryFactory(this.gitService, this.authService);
     this.helpSystem = new HelpSystem();
     
     this.setupProgram();
@@ -220,16 +219,6 @@ class PMCSApplication {
       .alias('member')
       .description('Manage organization memberships');
 
-    // Encryption commands
-    const encryptionCommands = new EncryptionCommands(
-      this.authService,
-      this.gitService
-    );
-
-    const encryptionCommand = this.program
-      .command('encryption')
-      .alias('encrypt')
-      .description('File encryption and key management');
 
     announcementCommand
       .command('create')
@@ -307,84 +296,6 @@ class PMCSApplication {
         await membershipCommands.updateMemberRole(options);
       });
 
-    // Encryption commands
-    encryptionCommand
-      .command('init')
-      .description('Initialize encryption system')
-      .action(async () => {
-        await encryptionCommands.initialize();
-      });
-
-    encryptionCommand
-      .command('encrypt <filePath>')
-      .description('Encrypt a file or directory')
-      .option('-o, --organization-id <id>', 'Organization context')
-      .option('-c, --classification <level>', 'Security classification')
-      .option('-l, --corporate-level <level>', 'Required corporate level')
-      .option('-r, --recursive', 'Encrypt directory recursively')
-      .action(async (filePath, options) => {
-        await encryptionCommands.encryptFile({ filePath, ...options });
-      });
-
-    encryptionCommand
-      .command('decrypt <filePath>')
-      .description('Decrypt an encrypted file')
-      .option('-o, --output-path <path>', 'Output file path')
-      .option('-t, --temporary', 'Create temporary decrypted file')
-      .action(async (filePath, options) => {
-        await encryptionCommands.decryptFile({ filePath, ...options });
-      });
-
-    encryptionCommand
-      .command('list')
-      .description('List encrypted files')
-      .option('-o, --organization-id <id>', 'Filter by organization')
-      .option('-c, --classification <level>', 'Filter by classification')
-      .option('-f, --format <format>', 'Output format', 'table')
-      .action(async (options) => {
-        await encryptionCommands.listEncryptedFiles(options);
-      });
-
-    encryptionCommand
-      .command('status')
-      .description('Show encryption system status')
-      .action(async () => {
-        await encryptionCommands.encryptionStatus();
-      });
-
-    encryptionCommand
-      .command('rotate-keys')
-      .description('Rotate encryption keys')
-      .option('-t, --type <type>', 'Key type (master, organization, user)')
-      .option('-o, --organization-id <id>', 'Organization ID for org keys')
-      .option('-u, --user-id <id>', 'User ID for user keys')
-      .option('-f, --force', 'Skip confirmation prompt')
-      .action(async (options) => {
-        await encryptionCommands.rotateKeys(options);
-      });
-
-    encryptionCommand
-      .command('start-session')
-      .description('Start decryption session')
-      .action(async () => {
-        await encryptionCommands.startSession();
-      });
-
-    encryptionCommand
-      .command('end-session')
-      .description('End decryption session')
-      .action(async () => {
-        await encryptionCommands.endSession();
-      });
-
-    encryptionCommand
-      .command('migrate')
-      .description('Migrate existing data to encrypted storage')
-      .option('-f, --force', 'Skip confirmation prompt')
-      .option('--dry-run', 'Show what would be encrypted without making changes')
-      .action(async (options) => {
-        await encryptionCommands.migrateToEncryption(options);
-      });
 
     // Help command
     this.program
@@ -419,20 +330,37 @@ class PMCSApplication {
       await this.repositoryFactory.initializeDirectoryStructure();
       console.log(chalk.green('✅ Directory structure created'));
 
+      // Initialize encryption system automatically
+      await this.initializeEncryption();
+      console.log(chalk.green('✅ Encryption system initialized'));
+
       // Create initial configuration
       await this.createInitialConfig();
       console.log(chalk.green('✅ Configuration files created'));
 
       console.log(chalk.cyan('\n🎉 PMCS Terminal Application initialized successfully!'));
       console.log(chalk.yellow('\nNext steps:'));
-      console.log('  1. Run "pmcs auth login" to authenticate');
-      console.log('  2. Run "pmcs organization create" to create your first organization');
-      console.log('  3. Run "pmcs help" for more commands');
+      console.log('  1. Run "pmcs auth register" to create your first user account');
+      console.log('  2. Run "pmcs auth login" to authenticate');
+      console.log('  3. Run "pmcs organization create" to create your first organization');
+      console.log('  4. Run "pmcs help" for more commands');
 
     } catch (error: any) {
       console.error(chalk.red('❌ Initialization failed:'), error.message);
       process.exit(1);
     }
+  }
+
+  private async initializeEncryption(): Promise<void> {
+    const fs = await import('fs-extra');
+    const CryptoService = (await import('./services/CryptoService')).CryptoService;
+    const KeyManager = (await import('./services/KeyManager')).KeyManager;
+    
+    const cryptoService = new CryptoService(this.authService);
+    const keyManager = new KeyManager(this.authService);
+    
+    await cryptoService.initialize();
+    await keyManager.initialize();
   }
 
   private async createInitialConfig(): Promise<void> {
@@ -441,6 +369,7 @@ class PMCSApplication {
     const config = {
       version: '1.0.0',
       initialized: new Date().toISOString(),
+      encryptionEnabled: true,
       settings: {
         defaultFormat: 'table',
         autoCommit: true,

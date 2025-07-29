@@ -89,7 +89,7 @@ export class CryptoService {
       salt
     );
     
-    const cipher = crypto.createCipher(this.ALGORITHM, derivedKey);
+    const cipher = crypto.createCipheriv(this.ALGORITHM, derivedKey, iv);
     cipher.setAAD(Buffer.from(JSON.stringify({
       userId: session.user.id,
       organizationId,
@@ -98,10 +98,8 @@ export class CryptoService {
       fileName
     })));
     
-    const encryptedData = Buffer.concat([
-      cipher.update(fileBuffer),
-      cipher.final()
-    ]);
+    let encryptedData = cipher.update(fileBuffer);
+    encryptedData = Buffer.concat([encryptedData, cipher.final()]);
     
     const authTag = cipher.getAuthTag();
     
@@ -167,7 +165,7 @@ export class CryptoService {
       salt
     );
     
-    const decipher = crypto.createDecipher(this.ALGORITHM, derivedKey);
+    const decipher = crypto.createDecipheriv(this.ALGORITHM, derivedKey, iv);
     decipher.setAuthTag(authTag);
     decipher.setAAD(Buffer.from(JSON.stringify({
       userId: metadata.encryptedBy,
@@ -177,10 +175,8 @@ export class CryptoService {
       fileName: path.basename(encryptedPath).replace('.encrypted', '')
     })));
     
-    const decryptedData = Buffer.concat([
-      decipher.update(encryptedData),
-      decipher.final()
-    ]);
+    let decryptedData = decipher.update(encryptedData);
+    decryptedData = Buffer.concat([decryptedData, decipher.final()]);
     
     const finalPath = outputPath || encryptedPath.replace('.encrypted', '');
     await fs.writeFile(finalPath, decryptedData);
