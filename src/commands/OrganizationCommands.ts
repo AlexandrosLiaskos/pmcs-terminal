@@ -15,8 +15,8 @@ export class OrganizationCommands {
     try {
       // Validate user permissions
       const session = await this.authService.getCurrentSession();
-      if (!session.permissions.canCreateOrganization) {
-        throw new Error('Insufficient permissions to create organization');
+      if (!session.systemPermissions.canCreateOrganizations) {
+        throw new Error('Insufficient permissions to create organization. Only system owners and admins can create organizations.');
       }
 
       // Begin git transaction
@@ -40,6 +40,14 @@ export class OrganizationCommands {
         // Create organization directory structure
         await this.createOrganizationStructure(org);
 
+        // Add creator as organization member with CEO role
+        await this.authService.addUserToOrganization(
+          session.user.id,
+          org.id,
+          'CEO' as any,
+          session.user.id
+        );
+
         // Commit changes
         await this.gitService.commitTransaction(
           `feat: Create organization ${org.name}`,
@@ -48,9 +56,9 @@ Corporate Level: ${org.corporateLevel}
 Classification: ${org.settings.classification}
 
 Created-By: ${session.user.email}
-[${session.corporateContext.role}]
+[${session.user.systemRole}]
 
-Approved-By: ${session.corporateContext.approvals.join(', ')}`
+System Role: ${session.user.systemRole}`
         );
 
         console.log(chalk.green(`✅ Organization '${org.name}' created successfully`));

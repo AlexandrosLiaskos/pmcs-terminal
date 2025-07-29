@@ -11,18 +11,27 @@ export class AnnouncementCommands {
     private gitService: GitService
   ) {}
 
-  async create(options: CreateAnnouncementOptions & { entityType: string; entityId: string }): Promise<void> {
+  async create(options: CreateAnnouncementOptions & { entityType: string; entityId: string; organizationId?: string }): Promise<void> {
     try {
       const session = await this.authService.getCurrentSession();
 
-      // Validate announcement permissions
-      if (!await this.authService.canCreateAnnouncement(options.entityType, options.entityId, session.user.id)) {
-        throw new Error('Insufficient permissions to create announcements in this entity');
+      // For now, require organizationId to be provided
+      if (!options.organizationId) {
+        throw new Error('Organization ID is required for creating announcements');
+      }
+
+      // Validate announcement permissions in the specific organization
+      if (!await this.authService.canCreateAnnouncement(options.organizationId, session.user.id)) {
+        throw new Error('Insufficient permissions to create announcements in this organization');
       }
 
       await this.gitService.startTransaction();
 
       try {
+        // Get user's corporate level in this organization
+        const orgMembership = session.organizationMemberships.find(m => m.organizationId === options.organizationId);
+        const corporateLevel = orgMembership?.corporateLevel || 'MEMBER' as any;
+
         // Create announcement
         const announcement = await this.announcementRepo.create({
           title: options.title,
@@ -33,9 +42,9 @@ export class AnnouncementCommands {
           priority: options.priority || 'MEDIUM' as any,
           publishedAt: options.publishNow ? new Date() : undefined,
           corporateContext: {
-            authorRole: session.corporateContext.role,
-            authorLevel: session.corporateContext.level,
-            classification: session.corporateContext.classification,
+            authorRole: session.user.systemRole,
+            authorLevel: corporateLevel,
+            classification: 'UNCLASSIFIED' as any, // Default classification
             approvalRequired: false,
             approvedBy: []
           },
@@ -52,11 +61,12 @@ export class AnnouncementCommands {
           `feat: Create announcement ${announcement.title}`,
           `Announcement: ${announcement.title}
 Entity: ${announcement.entityType}/${announcement.entityId}
+Organization: ${options.organizationId}
 Type: ${announcement.type}
 Priority: ${announcement.priority}
-Author: ${session.user.email} [${session.corporateContext.role}]
+Author: ${session.user.email} [${corporateLevel}]
 
-Classification: ${session.corporateContext.classification}`
+System Role: ${session.user.systemRole}`
         );
 
         console.log(chalk.green(`✅ Announcement '${announcement.title}' created successfully`));
@@ -101,8 +111,9 @@ Classification: ${session.corporateContext.classification}`
         announcements = announcements.filter(a => !(a.readBy || []).includes(session.user.id));
       }
 
-      // Only show published announcements unless user is admin
-      if (!session.permissions.canManageAnnouncements) {
+      // Only show published announcements unless user is system owner/admin
+      const canManageAnnouncements = session.user.systemRole === 'system.owner' || session.user.systemRole === 'system.admin';
+      if (!canManageAnnouncements) {
         announcements = announcements.filter(a => a.publishedAt);
       }
 

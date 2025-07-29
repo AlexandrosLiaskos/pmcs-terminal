@@ -73,6 +73,17 @@ class PMCSApplication {
       });
 
     authCommand
+      .command('register')
+      .description('Register a new user account')
+      .option('-n, --name <name>', 'Full name')
+      .option('-e, --email <email>', 'User email')
+      .option('-p, --password <password>', 'User password')
+      .option('-s, --system-role <role>', 'System role (system.member, system.admin)')
+      .action(async (options) => {
+        await authCommands.register(options);
+      });
+
+    authCommand
       .command('logout')
       .description('Logout from PMCS system')
       .action(async () => {

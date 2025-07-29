@@ -196,35 +196,120 @@ export interface AssignmentCorporateContext {
   approvalChain: string[];
 }
 
+// System-level roles (not organization-specific)
+export enum SystemRole {
+  SYSTEM_OWNER = 'system.owner',    // First user, full system control
+  SYSTEM_ADMIN = 'system.admin',    // Can register users, manage system
+  SYSTEM_MEMBER = 'system.member'   // Basic system access
+}
+
 export interface User {
   id: string;
   email: string;
   name: string;
-  corporateLevel: CorporateLevel;
-  role: string;
-  permissions: string[];
+  systemRole: SystemRole;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-export interface SessionPermissions {
-  canCreateOrganization: boolean;
-  canCreateAssignment: boolean;
-  canCreateAnnouncement: boolean;
-  canManageAnnouncements: boolean;
+// Organization membership with corporate role
+export interface OrganizationMembership {
+  id: string;
+  userId: string;
+  organizationId: string;
+  corporateLevel: CorporateLevel;
+  joinedAt: Date;
+  invitedBy: string;
+  status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
+}
+
+// System-level permissions based on system role
+export interface SystemPermissions {
+  canRegisterUsers: boolean;
+  canCreateOrganizations: boolean;
+  canManageSystem: boolean;
+  canDeleteOrganizations: boolean;
+}
+
+// Organization-level permissions based on corporate role within org
+export interface OrganizationPermissions {
+  organizationId: string;
+  corporateLevel: CorporateLevel;
+  canManageMembers: boolean;
+  canCreateAssignments: boolean;
+  canCreateAnnouncements: boolean;
+  canManageEntities: boolean;
+  canViewClassified: boolean;
+  visibilityLevel: CorporateLevel; // Can see entities from this level and below
 }
 
 export interface AuthSession {
   user: User;
-  permissions: SessionPermissions;
-  corporateContext: CorporateContext;
+  systemPermissions: SystemPermissions;
+  organizationMemberships: OrganizationMembership[];
+  organizationPermissions: OrganizationPermissions[];
   token: string;
   expiresAt: Date;
 }
 
-export interface CorporateContext {
-  role: string;
-  level: CorporateLevel;
-  approvals: string[];
-  classification: Classification;
+// Login credentials
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+// Registration data
+export interface RegistrationData {
+  name: string;
+  email: string;
+  password: string;
+  systemRole?: SystemRole;
+}
+
+// Corporate role capabilities by entity type
+export interface CorporateRoleCapabilities {
+  [EntityType.ORGANIZATION]: {
+    canView: CorporateLevel[];
+    canEdit: CorporateLevel[];
+    canDelete: CorporateLevel[];
+    canManageMembers: CorporateLevel[];
+  };
+  [EntityType.PORTFOLIO]: {
+    canView: CorporateLevel[];
+    canCreate: CorporateLevel[];
+    canEdit: CorporateLevel[];
+    canDelete: CorporateLevel[];
+  };
+  [EntityType.PROGRAM]: {
+    canView: CorporateLevel[];
+    canCreate: CorporateLevel[];
+    canEdit: CorporateLevel[];
+    canDelete: CorporateLevel[];
+  };
+  [EntityType.PROJECT]: {
+    canView: CorporateLevel[];
+    canCreate: CorporateLevel[];
+    canEdit: CorporateLevel[];
+    canDelete: CorporateLevel[];
+  };
+  [EntityType.OBJECTIVE]: {
+    canView: CorporateLevel[];
+    canCreate: CorporateLevel[];
+    canEdit: CorporateLevel[];
+    canDelete: CorporateLevel[];
+  };
+  [EntityType.KEY_RESULT]: {
+    canView: CorporateLevel[];
+    canCreate: CorporateLevel[];
+    canEdit: CorporateLevel[];
+    canDelete: CorporateLevel[];
+  };
+  [EntityType.INITIATIVE]: {
+    canView: CorporateLevel[];
+    canCreate: CorporateLevel[];
+    canEdit: CorporateLevel[];
+    canDelete: CorporateLevel[];
+  };
 }
 
 // Command Interfaces

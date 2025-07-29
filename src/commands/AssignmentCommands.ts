@@ -11,18 +11,27 @@ export class AssignmentCommands {
     private gitService: GitService
   ) {}
 
-  async create(options: CreateAssignmentOptions & { entityType: string; entityId: string }): Promise<void> {
+  async create(options: CreateAssignmentOptions & { entityType: string; entityId: string; organizationId?: string }): Promise<void> {
     try {
       const session = await this.authService.getCurrentSession();
 
-      // Validate assignment permissions
-      if (!await this.authService.canCreateAssignment(options.entityType, options.entityId, session.user.id)) {
-        throw new Error('Insufficient permissions to create assignments in this entity');
+      // For now, require organizationId to be provided
+      if (!options.organizationId) {
+        throw new Error('Organization ID is required for creating assignments');
+      }
+
+      // Validate assignment permissions in the specific organization
+      if (!await this.authService.canCreateAssignment(options.organizationId, session.user.id)) {
+        throw new Error('Insufficient permissions to create assignments in this organization');
       }
 
       await this.gitService.startTransaction();
 
       try {
+        // Get user's corporate level in this organization
+        const orgMembership = session.organizationMemberships.find(m => m.organizationId === options.organizationId);
+        const corporateLevel = orgMembership?.corporateLevel || 'MEMBER' as any;
+
         // Create assignment
         const assignment = await this.assignmentRepo.create({
           title: options.title,
@@ -34,8 +43,8 @@ export class AssignmentCommands {
           priority: options.priority || 'MEDIUM' as any,
           dueDate: options.dueDate,
           corporateContext: {
-            assignerRole: session.corporateContext.role,
-            assignerLevel: session.corporateContext.level,
+            assignerRole: session.user.systemRole,
+            assignerLevel: corporateLevel,
             requiresApproval: false, // Simple implementation
             approvalChain: []
           },
@@ -52,11 +61,12 @@ export class AssignmentCommands {
           `feat: Create assignment ${assignment.title}`,
           `Assignment: ${assignment.title}
 Entity: ${assignment.entityType}/${assignment.entityId}
-Assigner: ${assignment.assignerEmail} [${session.corporateContext.role}]
+Organization: ${options.organizationId}
+Assigner: ${assignment.assignerEmail} [${corporateLevel}]
 Assignee: ${assignment.assigneeEmail}
 Status: ${assignment.status}
 
-Classification: ${session.corporateContext.classification}`
+System Role: ${session.user.systemRole}`
         );
 
         console.log(chalk.green(`✅ Assignment '${assignment.title}' created successfully`));

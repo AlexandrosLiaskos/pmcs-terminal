@@ -2,11 +2,23 @@ import * as fs from 'fs-extra';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
 import * as path from 'path';
-import { AuthSession, User, CorporateContext, CorporateLevel, Classification } from '../types';
+import { 
+  AuthSession, 
+  User, 
+  SystemRole, 
+  SystemPermissions,
+  OrganizationMembership,
+  OrganizationPermissions,
+  LoginCredentials,
+  RegistrationData,
+  CorporateLevel,
+  Classification 
+} from '../types';
 
 export class AuthenticationService {
   private readonly sessionFile = '.pmcs/session.json';
   private readonly usersFile = '.pmcs/users.json';
+  private readonly membershipsFile = '.pmcs/memberships.json';
   private readonly jwtSecret = process.env.JWT_SECRET || 'pmcs-default-secret-key';
   private currentSession: AuthSession | null = null;
 
@@ -17,46 +29,79 @@ export class AuthenticationService {
   private async initializeAuthSystem(): Promise<void> {
     await fs.ensureDir('.pmcs');
     
-    // Create default users file if it doesn't exist
+    // Create empty users file if it doesn't exist (no default users)
     if (!await fs.pathExists(this.usersFile)) {
-      const defaultUsers = [
-        {
-          id: 'admin-001',
-          email: 'admin@pmcs.local',
-          name: 'System Administrator',
-          password: await bcrypt.hash('admin123', 10),
-          corporateLevel: CorporateLevel.CEO,
-          role: 'Administrator',
-          permissions: [
-            'CREATE_ORGANIZATION',
-            'CREATE_ASSIGNMENT',
-            'CREATE_ANNOUNCEMENT',
-            'MANAGE_USERS',
-            'SYSTEM_ADMIN'
-          ]
-        },
-        {
-          id: 'user-001',
-          email: 'user@pmcs.local',
-          name: 'Default User',
-          password: await bcrypt.hash('user123', 10),
-          corporateLevel: CorporateLevel.MANAGER,
-          role: 'Project Manager',
-          permissions: [
-            'CREATE_ASSIGNMENT',
-            'CREATE_ANNOUNCEMENT'
-          ]
-        }
-      ];
-      
-      await fs.writeJSON(this.usersFile, { users: defaultUsers }, { spaces: 2 });
+      await fs.writeJSON(this.usersFile, { users: [] }, { spaces: 2 });
+    }
+
+    // Create empty memberships file if it doesn't exist
+    if (!await fs.pathExists(this.membershipsFile)) {
+      await fs.writeJSON(this.membershipsFile, { memberships: [] }, { spaces: 2 });
     }
   }
 
-  async authenticate(credentials: {
-    email: string;
-    password: string;
-  }): Promise<AuthSession> {
+  /**
+   * Check if this is the first user registration (system is empty)
+   */
+  async isFirstUser(): Promise<boolean> {
+    const userData = await fs.readJSON(this.usersFile);
+    return userData.users.length === 0;
+  }
+
+  /**
+   * Get system permissions based on system role
+   */
+  private getSystemPermissions(systemRole: SystemRole): SystemPermissions {
+    switch (systemRole) {
+      case SystemRole.SYSTEM_OWNER:
+        return {
+          canRegisterUsers: true,
+          canCreateOrganizations: true,
+          canManageSystem: true,
+          canDeleteOrganizations: true
+        };
+      case SystemRole.SYSTEM_ADMIN:
+        return {
+          canRegisterUsers: true,
+          canCreateOrganizations: true,
+          canManageSystem: false,
+          canDeleteOrganizations: false
+        };
+      case SystemRole.SYSTEM_MEMBER:
+      default:
+        return {
+          canRegisterUsers: false,
+          canCreateOrganizations: false,
+          canManageSystem: false,
+          canDeleteOrganizations: false
+        };
+    }
+  }
+
+  /**
+   * Get organization permissions based on corporate level within org
+   */
+  private getOrganizationPermissions(
+    organizationId: string, 
+    corporateLevel: CorporateLevel
+  ): OrganizationPermissions {
+    const executiveLevels = [CorporateLevel.CEO, CorporateLevel.COO, CorporateLevel.CTO, CorporateLevel.CFO];
+    const seniorLevels = [CorporateLevel.EVP, CorporateLevel.SVP, CorporateLevel.VP];
+    const managementLevels = [CorporateLevel.DIRECTOR, CorporateLevel.MANAGER];
+    
+    return {
+      organizationId,
+      corporateLevel,
+      canManageMembers: executiveLevels.includes(corporateLevel),
+      canCreateAssignments: [...executiveLevels, ...seniorLevels, ...managementLevels].includes(corporateLevel),
+      canCreateAnnouncements: [...executiveLevels, ...seniorLevels, ...managementLevels].includes(corporateLevel),
+      canManageEntities: [...executiveLevels, ...seniorLevels].includes(corporateLevel),
+      canViewClassified: executiveLevels.includes(corporateLevel),
+      visibilityLevel: corporateLevel
+    };
+  }
+
+  async authenticate(credentials: LoginCredentials): Promise<AuthSession> {
     try {
       const userData = await fs.readJSON(this.usersFile);
       const user = userData.users.find((u: any) => u.email === credentials.email);
@@ -70,12 +115,23 @@ export class AuthenticationService {
         throw new Error('Invalid email or password');
       }
 
+      // Get user's organization memberships
+      const membershipsData = await fs.readJSON(this.membershipsFile);
+      const userMemberships = membershipsData.memberships.filter(
+        (m: OrganizationMembership) => m.userId === user.id && m.status === 'ACTIVE'
+      );
+
+      // Generate organization permissions for each membership
+      const organizationPermissions = userMemberships.map((membership: OrganizationMembership) =>
+        this.getOrganizationPermissions(membership.organizationId, membership.corporateLevel)
+      );
+
       // Create JWT token
       const token = jwt.sign(
         { 
           userId: user.id, 
           email: user.email,
-          corporateLevel: user.corporateLevel 
+          systemRole: user.systemRole 
         },
         this.jwtSecret,
         { expiresIn: '24h' }
@@ -87,22 +143,13 @@ export class AuthenticationService {
           id: user.id,
           email: user.email,
           name: user.name,
-          corporateLevel: user.corporateLevel,
-          role: user.role,
-          permissions: user.permissions
+          systemRole: user.systemRole,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
         },
-        permissions: {
-          canCreateOrganization: user.permissions.includes('CREATE_ORGANIZATION'),
-          canCreateAssignment: user.permissions.includes('CREATE_ASSIGNMENT'),
-          canCreateAnnouncement: user.permissions.includes('CREATE_ANNOUNCEMENT'),
-          canManageAnnouncements: user.permissions.includes('MANAGE_ANNOUNCEMENTS')
-        },
-        corporateContext: {
-          role: user.role,
-          level: user.corporateLevel,
-          approvals: [], // Would be populated based on hierarchy
-          classification: Classification.UNCLASSIFIED
-        },
+        systemPermissions: this.getSystemPermissions(user.systemRole),
+        organizationMemberships: userMemberships,
+        organizationPermissions,
         token,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
       };
@@ -175,26 +222,20 @@ export class AuthenticationService {
     try {
       const session = await this.getCurrentSession();
       
-      // System admin can access everything
-      if (session.user.permissions.includes('SYSTEM_ADMIN')) {
+      if (session.user.id !== userId) {
+        return false;
+      }
+      
+      // System owner can access everything
+      if (session.user.systemRole === SystemRole.SYSTEM_OWNER) {
         return true;
       }
 
-      // For now, allow access based on corporate level
-      // In a real implementation, this would check entity-specific permissions
-      const accessLevels = [
-        CorporateLevel.CEO,
-        CorporateLevel.COO,
-        CorporateLevel.CTO,
-        CorporateLevel.CFO,
-        CorporateLevel.EVP,
-        CorporateLevel.SVP,
-        CorporateLevel.VP,
-        CorporateLevel.DIRECTOR,
-        CorporateLevel.MANAGER
-      ];
-
-      return accessLevels.includes(session.user.corporateLevel);
+      // For entity access, need to determine which organization it belongs to
+      // and check if user has appropriate permissions in that organization
+      // This would typically require looking up the entity's organization
+      // For now, return true if user has any organization memberships
+      return session.organizationMemberships.length > 0;
     } catch (error: any) {
       return false;
     }
@@ -203,33 +244,47 @@ export class AuthenticationService {
   async canCreateOrganization(userId: string): Promise<boolean> {
     try {
       const session = await this.getCurrentSession();
-      return session.permissions.canCreateOrganization;
+      return session.user.id === userId && session.systemPermissions.canCreateOrganizations;
     } catch (error: any) {
       return false;
     }
   }
 
   async canCreateAssignment(
-    entityType: string, 
-    entityId: string, 
+    organizationId: string,
     userId: string
   ): Promise<boolean> {
     try {
       const session = await this.getCurrentSession();
-      return session.permissions.canCreateAssignment;
+      if (session.user.id !== userId) {
+        return false;
+      }
+
+      const orgPermissions = session.organizationPermissions.find(
+        p => p.organizationId === organizationId
+      );
+
+      return orgPermissions?.canCreateAssignments || false;
     } catch (error: any) {
       return false;
     }
   }
 
   async canCreateAnnouncement(
-    entityType: string, 
-    entityId: string, 
+    organizationId: string,
     userId: string
   ): Promise<boolean> {
     try {
       const session = await this.getCurrentSession();
-      return session.permissions.canCreateAnnouncement;
+      if (session.user.id !== userId) {
+        return false;
+      }
+
+      const orgPermissions = session.organizationPermissions.find(
+        p => p.organizationId === organizationId
+      );
+
+      return orgPermissions?.canCreateAnnouncements || false;
     } catch (error: any) {
       return false;
     }
@@ -238,6 +293,9 @@ export class AuthenticationService {
   async getSessionStatus(): Promise<{
     authenticated: boolean;
     user?: User;
+    systemRole?: SystemRole;
+    systemPermissions?: SystemPermissions;
+    organizationCount?: number;
     expiresAt?: Date;
   }> {
     try {
@@ -245,6 +303,9 @@ export class AuthenticationService {
       return {
         authenticated: true,
         user: session.user,
+        systemRole: session.user.systemRole,
+        systemPermissions: session.systemPermissions,
+        organizationCount: session.organizationMemberships.length,
         expiresAt: session.expiresAt
       };
     } catch (error: any) {
@@ -254,14 +315,50 @@ export class AuthenticationService {
     }
   }
 
-  // Helper method to create new users (for admin purposes)
-  async createUser(userData: {
+  /**
+   * Register a new user with proper security checks
+   */
+  async register(userData: RegistrationData): Promise<User> {
+    const isFirst = await this.isFirstUser();
+    
+    // If not first user, verify current user has permission to register
+    if (!isFirst) {
+      try {
+        const session = await this.getCurrentSession();
+        if (!session.systemPermissions.canRegisterUsers) {
+          throw new Error('Insufficient permissions to register users. Only system owners and admins can register new users.');
+        }
+      } catch (error: any) {
+        throw new Error('You must be logged in with appropriate permissions to register new users.');
+      }
+    }
+
+    // Determine system role
+    let systemRole: SystemRole;
+    if (isFirst) {
+      // First user becomes system owner
+      systemRole = SystemRole.SYSTEM_OWNER;
+    } else {
+      // Use provided role or default to member
+      systemRole = userData.systemRole || SystemRole.SYSTEM_MEMBER;
+    }
+
+    return await this.createUser({
+      email: userData.email,
+      name: userData.name,
+      password: userData.password,
+      systemRole
+    });
+  }
+
+  /**
+   * Create user with system role (internal method)
+   */
+  private async createUser(userData: {
     email: string;
     name: string;
     password: string;
-    corporateLevel: CorporateLevel;
-    role: string;
-    permissions: string[];
+    systemRole: SystemRole;
   }): Promise<User> {
     const users = await fs.readJSON(this.usersFile);
     
@@ -270,14 +367,15 @@ export class AuthenticationService {
       throw new Error('User with this email already exists');
     }
 
+    const now = new Date();
     const newUser = {
       id: `user-${Date.now()}`,
       email: userData.email,
       name: userData.name,
       password: await bcrypt.hash(userData.password, 10),
-      corporateLevel: userData.corporateLevel,
-      role: userData.role,
-      permissions: userData.permissions
+      systemRole: userData.systemRole,
+      createdAt: now,
+      updatedAt: now
     };
 
     users.users.push(newUser);
@@ -286,5 +384,83 @@ export class AuthenticationService {
     // Return user without password
     const { password, ...userWithoutPassword } = newUser;
     return userWithoutPassword as User;
+  }
+
+  /**
+   * Add user to organization with corporate role
+   */
+  async addUserToOrganization(
+    userId: string, 
+    organizationId: string, 
+    corporateLevel: CorporateLevel,
+    invitedBy: string
+  ): Promise<OrganizationMembership> {
+    const membershipsData = await fs.readJSON(this.membershipsFile);
+    
+    // Check if membership already exists
+    const existingMembership = membershipsData.memberships.find(
+      (m: OrganizationMembership) => 
+        m.userId === userId && m.organizationId === organizationId
+    );
+    
+    if (existingMembership) {
+      throw new Error('User is already a member of this organization');
+    }
+
+    const newMembership: OrganizationMembership = {
+      id: `membership-${Date.now()}`,
+      userId,
+      organizationId,
+      corporateLevel,
+      joinedAt: new Date(),
+      invitedBy,
+      status: 'ACTIVE'
+    };
+
+    membershipsData.memberships.push(newMembership);
+    await fs.writeJSON(this.membershipsFile, membershipsData, { spaces: 2 });
+
+    return newMembership;
+  }
+
+  /**
+   * Check if user can perform action in organization based on corporate role
+   */
+  async canPerformActionInOrganization(
+    userId: string,
+    organizationId: string,
+    action: 'manage_members' | 'create_assignments' | 'create_announcements' | 'manage_entities' | 'view_classified'
+  ): Promise<boolean> {
+    try {
+      const session = await this.getCurrentSession();
+      if (session.user.id !== userId) {
+        return false;
+      }
+
+      const orgPermissions = session.organizationPermissions.find(
+        p => p.organizationId === organizationId
+      );
+
+      if (!orgPermissions) {
+        return false;
+      }
+
+      switch (action) {
+        case 'manage_members':
+          return orgPermissions.canManageMembers;
+        case 'create_assignments':
+          return orgPermissions.canCreateAssignments;
+        case 'create_announcements':
+          return orgPermissions.canCreateAnnouncements;
+        case 'manage_entities':
+          return orgPermissions.canManageEntities;
+        case 'view_classified':
+          return orgPermissions.canViewClassified;
+        default:
+          return false;
+      }
+    } catch (error: any) {
+      return false;
+    }
   }
 }
