@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import inquirer from 'inquirer';
 import Table from 'cli-table3';
 import { AuthenticationService } from '../services/AuthenticationService';
 import { Repository, Organization, CreateOrganizationOptions, ListOptions, ShowOptions } from '../types';
@@ -19,25 +20,95 @@ export class OrganizationCommands {
         throw new Error('Insufficient permissions to create organization. Only system owners and admins can create organizations.');
       }
 
+      let { name, description, classification, corporateLevel, requiresApproval } = options;
+
+      // If required fields not provided via options, prompt for them
+      if (!name) {
+        console.log(chalk.cyan('🏢 Create New Organization\n'));
+        
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'name',
+            message: 'Organization Name:',
+            when: !name,
+            validate: (input: string) => {
+              if (!input.trim()) {
+                return 'Organization name is required';
+              }
+              if (input.length < 2) {
+                return 'Organization name must be at least 2 characters';
+              }
+              return true;
+            }
+          },
+          {
+            type: 'input',
+            name: 'description',
+            message: 'Description (optional):',
+            when: !description
+          },
+          {
+            type: 'list',
+            name: 'classification',
+            message: 'Security Classification:',
+            when: !classification,
+            choices: [
+              { name: 'UNCLASSIFIED - Standard access level', value: 'UNCLASSIFIED' },
+              { name: 'CONFIDENTIAL - Moderate security level', value: 'CONFIDENTIAL' },
+              { name: 'SECRET - High security level', value: 'SECRET' },
+              { name: 'TOP_SECRET - Highest security level', value: 'TOP_SECRET' }
+            ],
+            default: 'UNCLASSIFIED'
+          },
+          {
+            type: 'list',
+            name: 'corporateLevel',
+            message: 'Corporate Level:',
+            when: !corporateLevel,
+            choices: [
+              { name: 'ORGANIZATION - Standard organization level', value: 'ORGANIZATION' },
+              { name: 'DIVISION - Division level', value: 'DIVISION' },
+              { name: 'SUBSIDIARY - Subsidiary level', value: 'SUBSIDIARY' },
+              { name: 'ENTERPRISE - Enterprise level', value: 'ENTERPRISE' }
+            ],
+            default: 'ORGANIZATION'
+          },
+          {
+            type: 'confirm',
+            name: 'requiresApproval',
+            message: 'Require approval for changes?',
+            when: requiresApproval === undefined,
+            default: false
+          }
+        ]);
+
+        name = name || answers.name;
+        description = description || answers.description;
+        classification = classification || answers.classification;
+        corporateLevel = corporateLevel || answers.corporateLevel;
+        requiresApproval = requiresApproval ?? answers.requiresApproval;
+      }
+
       // Begin git transaction
       await this.gitService.startTransaction();
 
       try {
         // Create organization with corporate hierarchy integration
         const org = await this.orgRepo.create({
-          name: options.name,
-          description: options.description,
-          corporateLevel: options.corporateLevel || 'ORGANIZATION' as any,
+          name: name!,
+          description: description,
+          corporateLevel: corporateLevel || 'ORGANIZATION' as any,
           settings: {
-            classification: options.classification || 'UNCLASSIFIED' as any,
-            requiresApproval: options.requiresApproval || false,
+            classification: classification || 'UNCLASSIFIED' as any,
+            requiresApproval: requiresApproval || false,
             defaultAccessLevel: 'OBSERVER' as any
           },
           createdBy: session.user.id,
           version: '1.0.0'
         });
 
-        // Create organization directory structure
+        // Create organization directory structure (README only, repository handles the data file)
         await this.createOrganizationStructure(org);
 
         // Add creator as organization member with CEO role
@@ -169,16 +240,8 @@ System Role: ${session.user.systemRole}`
     const fs = await import('fs-extra');
     const orgPath = `organizations/${org.id}`;
 
-    // Create organization directory and metadata
+    // Create organization directory
     await fs.ensureDir(orgPath);
-
-    // Create organization metadata file
-    await fs.writeJSON(`${orgPath}/organization.json`, {
-      ...org,
-      entityType: 'organization',
-      version: '1.0.0',
-      lastModified: new Date().toISOString()
-    }, { spaces: 2 });
 
     // Create subdirectories for child entities
     await fs.ensureDir(`${orgPath}/portfolios`);
@@ -192,8 +255,7 @@ System Role: ${session.user.systemRole}`
     // Create README with organization context
     await fs.writeFile(`${orgPath}/README.md`, this.generateOrganizationReadme(org));
 
-    // Add files to git transaction
-    this.gitService.addToTransaction(`${orgPath}/organization.json`);
+    // Add README to git transaction (encrypted file is handled by repository)
     this.gitService.addToTransaction(`${orgPath}/README.md`);
   }
 

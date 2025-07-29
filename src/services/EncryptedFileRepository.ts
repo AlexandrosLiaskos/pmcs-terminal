@@ -323,7 +323,7 @@ export class EncryptedFileRepository<T extends BaseEntity> implements Repository
     };
     
     await fs.writeJSON(entityPath, entityWithMetadata, { spaces: 2 });
-    this.gitService.addToTransaction(entityPath);
+    // Note: git transaction is handled by encryptEntityFile for encrypted files
   }
 
   private async encryptEntityFile(entityPath: string, entityId: string): Promise<void> {

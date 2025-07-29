@@ -112,8 +112,8 @@ class PMCSApplication {
 
     orgCommand
       .command('create')
-      .description('Create a new organization')
-      .requiredOption('-n, --name <name>', 'Organization name')
+      .description('Create a new organization (interactive prompts if options missing)')
+      .option('-n, --name <name>', 'Organization name')
       .option('-d, --description <description>', 'Organization description')
       .option('-c, --classification <level>', 'Security classification', 'UNCLASSIFIED')
       .option('--corporate-level <level>', 'Corporate hierarchy level', 'ORGANIZATION')
