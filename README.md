@@ -137,6 +137,21 @@ pmcs announcements list --unread           # Unread announcements
 pmcs announcements show <id>               # Announcement details
 ```
 
+### Organization Membership
+```bash
+# Add member to organization (requires management permissions)
+pmcs members add -o <org-id> -u user@email.com -l MANAGER
+
+# List organization members
+pmcs members list -o <org-id>
+
+# Update member role
+pmcs members update-role -o <org-id> -u user@email.com -l DIRECTOR
+
+# Remove member
+pmcs members remove -o <org-id> -u user@email.com
+```
+
 ## 🔐 Security & Permissions
 
 ### Corporate Hierarchy Levels
@@ -159,22 +174,29 @@ pmcs announcements show <id>               # Announcement details
 - **CONFIDENTIAL** - Moderate security level
 - **UNCLASSIFIED** - Standard access level
 
-### Default Accounts
-```bash
-# Administrator Account
-Email: admin@pmcs.local
-Password: admin123
-Role: Administrator
-Corporate Level: CEO
-Permissions: Full system access
+### New System Setup
 
-# Standard User Account
-Email: user@pmcs.local
-Password: user123
-Role: Team Member
-Corporate Level: MEMBER
-Permissions: Limited access
+**First User Registration (System Owner)**
+The first user to register automatically becomes the `system.owner` with full control:
+
+```bash
+# First registration creates system owner
+pmcs auth register -n "System Owner" -e "owner@company.com" -p "securepass123"
+
+# Subsequent registrations require system owner/admin login
+pmcs auth login -e "owner@company.com" -p "securepass123"
+pmcs auth register -n "Team Lead" -e "lead@company.com" -p "pass123" -s "system.admin"
 ```
+
+**System Roles**
+- `system.owner` - First user only, full system control
+- `system.admin` - Can register users, create organizations  
+- `system.member` - Basic system access only
+
+**Organization Membership**
+Users must be added to organizations with corporate roles:
+- System roles control system-wide actions
+- Corporate roles control organization-specific actions
 
 ## 🛠️ Development
 

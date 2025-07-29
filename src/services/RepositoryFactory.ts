@@ -2,6 +2,8 @@ import * as fs from 'fs-extra';
 import { Repository } from '../types';
 import { GitService } from './GitService';
 import { FileBasedRepository } from './FileBasedRepository';
+import { EncryptedFileRepository } from './EncryptedFileRepository';
+import { AuthenticationService } from './AuthenticationService';
 import { 
   Organization, 
   Portfolio, 
@@ -16,10 +18,26 @@ import {
 
 export class RepositoryFactory {
   private gitService: GitService;
+  private authService?: AuthenticationService;
   private repositories: Map<string, Repository<any>> = new Map();
+  private encryptedRepositories: Map<string, Repository<any>> = new Map();
+  private useEncryption: boolean = false;
 
-  constructor(gitService: GitService) {
+  constructor(gitService: GitService, authService?: AuthenticationService) {
     this.gitService = gitService;
+    this.authService = authService;
+  }
+
+  setAuthenticationService(authService: AuthenticationService): void {
+    this.authService = authService;
+  }
+
+  enableEncryption(): void {
+    this.useEncryption = true;
+  }
+
+  disableEncryption(): void {
+    this.useEncryption = false;
   }
 
   async initializeDirectoryStructure(): Promise<void> {
@@ -110,14 +128,25 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
 
   getOrganizationRepository(): Repository<Organization> {
     const key = 'organization';
-    if (!this.repositories.has(key)) {
-      this.repositories.set(key, new FileBasedRepository<Organization>(
-        'organizations',
-        this.gitService,
-        'organization'
-      ));
+    const repoMap = this.useEncryption ? this.encryptedRepositories : this.repositories;
+    
+    if (!repoMap.has(key)) {
+      if (this.useEncryption && this.authService) {
+        repoMap.set(key, new EncryptedFileRepository<Organization>(
+          'organization',
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        ));
+      } else {
+        repoMap.set(key, new FileBasedRepository<Organization>(
+          'organizations',
+          this.gitService,
+          'organization'
+        ));
+      }
     }
-    return this.repositories.get(key)!;
+    return repoMap.get(key)!;
   }
 
   getPortfolioRepository(): Repository<Portfolio> {
@@ -240,5 +269,113 @@ Structure: {entityType}/{entityId}/announcements/{announcementId}/
       default:
         throw new Error(`Unknown entity type: ${entityType}`);
     }
+  }
+
+  async migrateToEncryptedStorage(): Promise<{
+    migrated: string[];
+    errors: Array<{ repository: string; error: string }>;
+  }> {
+    if (!this.authService) {
+      throw new Error('Authentication service required for encryption migration');
+    }
+
+    const migrated: string[] = [];
+    const errors: Array<{ repository: string; error: string }> = [];
+    
+    const entityTypes = [
+      'organization', 'portfolio', 'program', 'project',
+      'objective', 'keyresult', 'initiative', 'assignment', 'announcement'
+    ];
+
+    for (const entityType of entityTypes) {
+      try {
+        const encryptedRepo = new EncryptedFileRepository<any>(
+          entityType,
+          this.gitService,
+          this.authService,
+          { autoEncrypt: true }
+        );
+
+        await encryptedRepo.initialize();
+        const result = await encryptedRepo.migrateToEncryption();
+        
+        migrated.push(...result.migrated);
+        errors.push(...result.errors.map(e => ({ repository: entityType, error: e.error })));
+        
+      } catch (error: any) {
+        errors.push({
+          repository: entityType,
+          error: error.message
+        });
+      }
+    }
+
+    return { migrated, errors };
+  }
+
+  async getEncryptionStatus(): Promise<{
+    totalRepositories: number;
+    encryptedRepositories: number;
+    encryptionPercentage: number;
+    repositoryStatus: Array<{
+      repository: string;
+      totalFiles: number;
+      encryptedFiles: number;
+      encryptionPercentage: number;
+    }>;
+  }> {
+    const entityTypes = [
+      'organization', 'portfolio', 'program', 'project',
+      'objective', 'keyresult', 'initiative', 'assignment', 'announcement'
+    ];
+
+    const repositoryStatus: Array<{
+      repository: string;
+      totalFiles: number;
+      encryptedFiles: number;
+      encryptionPercentage: number;
+    }> = [];
+
+    let totalEncryptedRepos = 0;
+
+    for (const entityType of entityTypes) {
+      try {
+        if (!this.authService) continue;
+
+        const encryptedRepo = new EncryptedFileRepository<any>(
+          entityType,
+          this.gitService,
+          this.authService
+        );
+
+        await encryptedRepo.initialize();
+        const status = await encryptedRepo.getEncryptionStatus();
+        
+        repositoryStatus.push({
+          repository: entityType,
+          totalFiles: status.totalFiles,
+          encryptedFiles: status.encryptedFiles,
+          encryptionPercentage: status.encryptionPercentage
+        });
+
+        if (status.encryptionPercentage === 100 && status.totalFiles > 0) {
+          totalEncryptedRepos++;
+        }
+      } catch (error) {
+        repositoryStatus.push({
+          repository: entityType,
+          totalFiles: 0,
+          encryptedFiles: 0,
+          encryptionPercentage: 0
+        });
+      }
+    }
+
+    return {
+      totalRepositories: entityTypes.length,
+      encryptedRepositories: totalEncryptedRepos,
+      encryptionPercentage: (totalEncryptedRepos / entityTypes.length) * 100,
+      repositoryStatus
+    };
   }
 }

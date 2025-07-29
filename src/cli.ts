@@ -9,6 +9,8 @@ import { OrganizationCommands } from './commands/OrganizationCommands';
 import { AssignmentCommands } from './commands/AssignmentCommands';
 import { AnnouncementCommands } from './commands/AnnouncementCommands';
 import { AuthCommands } from './commands/AuthCommands';
+import { MembershipCommands } from './commands/MembershipCommands';
+import { EncryptionCommands } from './commands/EncryptionCommands';
 import { HelpSystem } from './utils/HelpSystem';
 import * as dotenv from 'dotenv';
 
@@ -207,6 +209,28 @@ class PMCSApplication {
       .alias('announce')
       .description('Manage announcements');
 
+    // Membership commands
+    const membershipCommands = new MembershipCommands(
+      this.authService,
+      this.gitService
+    );
+
+    const memberCommand = this.program
+      .command('members')
+      .alias('member')
+      .description('Manage organization memberships');
+
+    // Encryption commands
+    const encryptionCommands = new EncryptionCommands(
+      this.authService,
+      this.gitService
+    );
+
+    const encryptionCommand = this.program
+      .command('encryption')
+      .alias('encrypt')
+      .description('File encryption and key management');
+
     announcementCommand
       .command('create')
       .description('Create a new announcement')
@@ -242,6 +266,124 @@ class PMCSApplication {
         }
         options.unreadOnly = options.unread;
         await announcementCommands.list(options);
+      });
+
+    // Membership commands
+    memberCommand
+      .command('add')
+      .description('Add user to organization')
+      .option('-o, --organization-id <id>', 'Organization ID')
+      .option('-u, --user-email <email>', 'User email')
+      .option('-l, --corporate-level <level>', 'Corporate level')
+      .action(async (options) => {
+        await membershipCommands.addMember(options);
+      });
+
+    memberCommand
+      .command('list')
+      .description('List organization members')
+      .requiredOption('-o, --organization-id <id>', 'Organization ID')
+      .option('-f, --format <format>', 'Output format', 'table')
+      .action(async (options) => {
+        await membershipCommands.listMembers(options);
+      });
+
+    memberCommand
+      .command('remove')
+      .description('Remove user from organization')
+      .requiredOption('-o, --organization-id <id>', 'Organization ID')
+      .requiredOption('-u, --user-email <email>', 'User email')
+      .action(async (options) => {
+        await membershipCommands.removeMember(options);
+      });
+
+    memberCommand
+      .command('update-role')
+      .description('Update member corporate role')
+      .requiredOption('-o, --organization-id <id>', 'Organization ID')
+      .requiredOption('-u, --user-email <email>', 'User email')
+      .option('-l, --corporate-level <level>', 'New corporate level')
+      .action(async (options) => {
+        await membershipCommands.updateMemberRole(options);
+      });
+
+    // Encryption commands
+    encryptionCommand
+      .command('init')
+      .description('Initialize encryption system')
+      .action(async () => {
+        await encryptionCommands.initialize();
+      });
+
+    encryptionCommand
+      .command('encrypt <filePath>')
+      .description('Encrypt a file or directory')
+      .option('-o, --organization-id <id>', 'Organization context')
+      .option('-c, --classification <level>', 'Security classification')
+      .option('-l, --corporate-level <level>', 'Required corporate level')
+      .option('-r, --recursive', 'Encrypt directory recursively')
+      .action(async (filePath, options) => {
+        await encryptionCommands.encryptFile({ filePath, ...options });
+      });
+
+    encryptionCommand
+      .command('decrypt <filePath>')
+      .description('Decrypt an encrypted file')
+      .option('-o, --output-path <path>', 'Output file path')
+      .option('-t, --temporary', 'Create temporary decrypted file')
+      .action(async (filePath, options) => {
+        await encryptionCommands.decryptFile({ filePath, ...options });
+      });
+
+    encryptionCommand
+      .command('list')
+      .description('List encrypted files')
+      .option('-o, --organization-id <id>', 'Filter by organization')
+      .option('-c, --classification <level>', 'Filter by classification')
+      .option('-f, --format <format>', 'Output format', 'table')
+      .action(async (options) => {
+        await encryptionCommands.listEncryptedFiles(options);
+      });
+
+    encryptionCommand
+      .command('status')
+      .description('Show encryption system status')
+      .action(async () => {
+        await encryptionCommands.encryptionStatus();
+      });
+
+    encryptionCommand
+      .command('rotate-keys')
+      .description('Rotate encryption keys')
+      .option('-t, --type <type>', 'Key type (master, organization, user)')
+      .option('-o, --organization-id <id>', 'Organization ID for org keys')
+      .option('-u, --user-id <id>', 'User ID for user keys')
+      .option('-f, --force', 'Skip confirmation prompt')
+      .action(async (options) => {
+        await encryptionCommands.rotateKeys(options);
+      });
+
+    encryptionCommand
+      .command('start-session')
+      .description('Start decryption session')
+      .action(async () => {
+        await encryptionCommands.startSession();
+      });
+
+    encryptionCommand
+      .command('end-session')
+      .description('End decryption session')
+      .action(async () => {
+        await encryptionCommands.endSession();
+      });
+
+    encryptionCommand
+      .command('migrate')
+      .description('Migrate existing data to encrypted storage')
+      .option('-f, --force', 'Skip confirmation prompt')
+      .option('--dry-run', 'Show what would be encrypted without making changes')
+      .action(async (options) => {
+        await encryptionCommands.migrateToEncryption(options);
       });
 
     // Help command
