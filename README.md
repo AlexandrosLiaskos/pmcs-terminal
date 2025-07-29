@@ -28,8 +28,8 @@ A headless, file-based project management system designed for terminal-driven wo
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd terminal
+git clone https://github.com/AlexandrosLiaskos/pmcs-terminal.git
+cd pmcs-terminal
 
 # Install dependencies
 npm install
@@ -37,13 +37,19 @@ npm install
 # Build the application
 npm run build
 
-# Initialize PMCS
-npm start -- init
+# Make pmcs available globally (one-time setup)
+sudo npm link
+
+# Now you can use 'pmcs' anywhere!
+# Go to any folder where you want a project management system
+cd ~/my-projects
+pmcs init
 
 # Login with default credentials
-npm start -- auth login
-# Default admin: admin@pmcs.local / admin123
-# Default user: user@pmcs.local / user123
+pmcs auth login -e admin@pmcs.local -p admin123
+
+# Create your first organization
+pmcs organization create -n "My Organization"
 ```
 
 ### Development Mode
